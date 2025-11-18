@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AddExerciseCard from "./components/AddExerciseCard";
 import PlanFormCard from "./components/PlanFormCard";
 import PlanSelectorCard from "./components/PlanSelectorCard";
@@ -6,14 +6,44 @@ import RoleToggle from "./components/RoleToggle";
 import SessionLogger, { LogInputState } from "./components/SessionLogger";
 import SummaryCard from "./components/SummaryCard";
 import Timer from "./components/Timer";
-import { defaultPlan, exerciseTemplates, today, uid } from "./data";
-import { Exercise, Role, SessionEntry, WorkoutPlan } from "./types";
+import { initialPlans, exerciseTemplates, today, uid } from "./lib/data";
+import { Exercise, Role, SessionEntry, WorkoutPlan } from "./lib/types";
 
 const App = () => {
   const [role, setRole] = useState<Role>("trainer");
-  const [plans, setPlans] = useState<WorkoutPlan[]>([defaultPlan]);
-  const [selectedPlanId, setSelectedPlanId] = useState<string>(defaultPlan.id);
+  const [plans, setPlans] = useState<WorkoutPlan[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<string>(initialPlans[0]?.id ?? "");
   const [sessionEntries, setSessionEntries] = useState<SessionEntry[]>([]);
+  const [activeTab, setActiveTab] = useState<"plans" | "session" | "summary">("plans");
+
+  // Persist helper
+  const savePlans = (plansToSave: WorkoutPlan[]) => {
+    try {
+      localStorage.setItem("workout_plans", JSON.stringify(plansToSave));
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  // Load plans from localStorage (fallback to initialPlans)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("workout_plans");
+      if (raw) {
+        const parsed: WorkoutPlan[] = JSON.parse(raw);
+        setPlans(parsed);
+        setSelectedPlanId(parsed[0]?.id ?? initialPlans[0]?.id ?? "");
+      } else {
+        setPlans(initialPlans);
+        setSelectedPlanId(initialPlans[0]?.id ?? "");
+        savePlans(initialPlans);
+      }
+    } catch (e) {
+      setPlans(initialPlans);
+      setSelectedPlanId(initialPlans[0]?.id ?? "");
+      savePlans(initialPlans);
+    }
+  }, []);
 
   const selectedPlan = plans.find((plan) => plan.id === selectedPlanId);
 
@@ -24,8 +54,45 @@ const App = () => {
       description,
       exercises: [],
     };
-    setPlans((prev) => [...prev, newPlan]);
+    setPlans((prev) => {
+      const updated = [...prev, newPlan];
+      savePlans(updated);
+      return updated;
+    });
     setSelectedPlanId(newPlan.id);
+  };
+
+  // Plan-scoped handlers used by PlanSelectorCard modal
+  const handleAddExerciseToPlan = (planId: string, exercise: { name: string; targetSets: number; targetReps: number; templateId?: string }) => {
+    setPlans((prev) => {
+      const updated = prev.map((plan) =>
+        plan.id === planId
+          ? { ...plan, exercises: [...plan.exercises, { id: uid(), name: exercise.name, templateId: exercise.templateId, targetSets: exercise.targetSets, targetReps: exercise.targetReps }] }
+          : plan,
+      );
+      savePlans(updated);
+      return updated;
+    });
+  };
+
+  const handleUpdateExerciseInPlan = (planId: string, exerciseId: string, updates: { name: string; targetSets: number; targetReps: number }) => {
+    setPlans((prev) => {
+      const updated = prev.map((plan) =>
+        plan.id === planId
+          ? { ...plan, exercises: plan.exercises.map((ex) => (ex.id === exerciseId ? { ...ex, name: updates.name, targetSets: updates.targetSets, targetReps: updates.targetReps } : ex)) }
+          : plan,
+      );
+      savePlans(updated);
+      return updated;
+    });
+  };
+
+  const handleDeleteExerciseFromPlan = (planId: string, exerciseId: string) => {
+    setPlans((prev) => {
+      const updated = prev.map((plan) => (plan.id === planId ? { ...plan, exercises: plan.exercises.filter((ex) => ex.id !== exerciseId) } : plan));
+      savePlans(updated);
+      return updated;
+    });
   };
 
   const handleAddExercise = (exercise: { name: string; targetSets: number; targetReps: number; templateId?: string }) => {
@@ -37,14 +104,16 @@ const App = () => {
       targetSets: exercise.targetSets,
       targetReps: exercise.targetReps,
     };
-    setPlans((prev) =>
-      prev.map((plan) => (plan.id === selectedPlan.id ? { ...plan, exercises: [...plan.exercises, newExercise] } : plan)),
-    );
+    setPlans((prev) => {
+      const updated = prev.map((plan) => (plan.id === selectedPlan.id ? { ...plan, exercises: [...plan.exercises, newExercise] } : plan));
+      savePlans(updated);
+      return updated;
+    });
   };
 
   const handleUpdateExercise = (exerciseId: string, updates: { name: string; targetSets: number; targetReps: number }) => {
-    setPlans((prev) =>
-      prev.map((plan) =>
+    setPlans((prev) => {
+      const updated = prev.map((plan) =>
         plan.id === selectedPlanId
           ? {
               ...plan,
@@ -53,30 +122,34 @@ const App = () => {
               ),
             }
           : plan,
-      ),
-    );
+      );
+      savePlans(updated);
+      return updated;
+    });
   };
 
   const handleDeleteExercise = (exerciseId: string) => {
     if (!selectedPlan || role !== "trainer") return;
-    setPlans((prev) => prev.map((plan) => (plan.id === selectedPlan.id ? { ...plan, exercises: plan.exercises.filter((ex) => ex.id !== exerciseId) } : plan)));
+    setPlans((prev) => {
+      const updated = prev.map((plan) => (plan.id === selectedPlan.id ? { ...plan, exercises: plan.exercises.filter((ex) => ex.id !== exerciseId) } : plan));
+      savePlans(updated);
+      return updated;
+    });
   };
 
   const handleSaveLog = (exercise: Exercise, log: LogInputState) => {
     if (!selectedPlan) return;
-    const repsArray = log.repsPerSet
-      .split(",")
-      .map((r) => Number(r.trim()))
-      .filter((r) => !Number.isNaN(r) && r > 0);
+
+    const repsArray = log.sets.length ? log.sets.map((s) => Number(s.reps) || 0) : [];
 
     const newEntry: SessionEntry = {
       id: uid(),
       planId: selectedPlan.id,
       exerciseId: exercise.id,
       date: today,
-      setsDone: log.setsDone || repsArray.length || exercise.targetSets,
+      setsDone: log.sets.length || exercise.targetSets,
       repsPerSet: repsArray.length ? repsArray : Array(exercise.targetSets).fill(exercise.targetReps),
-      weight: log.weight || 0,
+      weight: log.sets.length ? (log.sets[log.sets.length - 1].weight || 0) : 0,
       notes: log.notes.trim() || undefined,
     };
 
@@ -102,33 +175,64 @@ const App = () => {
         <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold">Workout Tracker POC</h1>
-            <p className="text-sm text-slate-400">Quickly draft, adjust, and log training sessions.</p>
           </div>
           <RoleToggle role={role} onChange={setRole} />
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <section className="flex flex-col gap-4">
-            <PlanSelectorCard
-              plans={plans}
-              selectedPlanId={selectedPlanId}
-              selectedPlan={selectedPlan}
-              role={role}
-              onSelectPlan={setSelectedPlanId}
-              onUpdateExercise={handleUpdateExercise}
-              onDeleteExercise={handleDeleteExercise}
-            />
+        {/* Top tabs to switch full-screen panels */}
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-md overflow-hidden border border-slate-800">
+            <button
+              className={`px-3 py-1 ${activeTab === 'plans' ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-slate-200'}`}
+              onClick={() => setActiveTab('plans')}
+            >
+              Plans
+            </button>
+            <button
+              className={`px-3 py-1 ${activeTab === 'session' ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-slate-200'}`}
+              onClick={() => setActiveTab('session')}
+            >
+              Session Logging
+            </button>
+            <button
+              className={`px-3 py-1 ${activeTab === 'summary' ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-slate-200'}`}
+              onClick={() => setActiveTab('summary')}
+            >
+              Today's Summary
+            </button>
+          </div>
+        </div>
 
-            {role === "trainer" && <PlanFormCard onCreatePlan={handleCreatePlan} />}
+        <div>
+          {activeTab === 'plans' && (
+            <section className="flex flex-col gap-4">
+              <PlanSelectorCard
+                plans={plans}
+                selectedPlanId={selectedPlanId}
+                selectedPlan={selectedPlan}
+                role={role}
+                onSelectPlan={setSelectedPlanId}
+                onUpdateExerciseInPlan={handleUpdateExerciseInPlan}
+                onDeleteExerciseFromPlan={handleDeleteExerciseFromPlan}
+                onAddExerciseToPlan={handleAddExerciseToPlan}
+              />
 
-            <AddExerciseCard templates={exerciseTemplates} onAdd={handleAddExercise} />
-          </section>
+            </section>
+          )}
 
-          <section className="flex flex-col gap-4">
-            <SessionLogger selectedPlan={selectedPlan} sessionEntries={sessionEntries} onSaveLog={handleSaveLog} />
-            <SummaryCard plan={selectedPlan} entries={todaysSummary} date={today} />
-            <Timer />
-          </section>
+          {activeTab === 'session' && (
+            <section className="flex flex-col gap-4">
+                          <Timer />
+              <SessionLogger selectedPlan={selectedPlan} sessionEntries={sessionEntries} onSaveLog={handleSaveLog} />
+
+            </section>
+          )}
+
+          {activeTab === 'summary' && (
+            <section className="flex flex-col gap-4">
+              <SummaryCard plan={selectedPlan} entries={todaysSummary} date={today} />
+            </section>
+          )}
         </div>
       </div>
     </div>

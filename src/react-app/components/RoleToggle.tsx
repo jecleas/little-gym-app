@@ -1,4 +1,4 @@
-import { Role } from "../types";
+import { Role } from "../lib/types";
 
 type RoleToggleProps = {
   role: Role;
