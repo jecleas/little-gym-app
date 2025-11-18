@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
-import { Exercise, SessionEntry, WorkoutPlan } from "../types";
+import { Exercise, SessionEntry, WorkoutPlan } from "../lib/types";
+import { Trash2 } from "lucide-react";
 
+export type LogSet = { reps: number; weight: number };
 export type LogInputState = {
-  setsDone: number;
-  repsPerSet: string;
-  weight: number;
+  sets: LogSet[];
   notes: string;
 };
 
@@ -14,7 +14,7 @@ type SessionLoggerProps = {
   onSaveLog: (exercise: Exercise, log: LogInputState) => void;
 };
 
-const defaultLogState: LogInputState = { setsDone: 0, repsPerSet: "", weight: 0, notes: "" };
+const defaultLogState: LogInputState = { sets: [], notes: "" };
 
 const SessionLogger = ({ selectedPlan, sessionEntries, onSaveLog }: SessionLoggerProps) => {
   const [logInputs, setLogInputs] = useState<Record<string, LogInputState>>({});
@@ -24,17 +24,43 @@ const SessionLogger = ({ selectedPlan, sessionEntries, onSaveLog }: SessionLogge
     [sessionEntries, selectedPlan?.id],
   );
 
-  const updateLogInput = (exerciseId: string, field: keyof LogInputState, value: string) => {
+  const ensureLog = (exerciseId: string, template?: { reps?: number }) =>
+    setLogInputs((prev) => ({
+      ...prev,
+      [exerciseId]: prev[exerciseId] ?? { sets: template?.reps ? [{ reps: template.reps, weight: 0 }] : [], notes: "" },
+    }));
+
+  const addSet = (exerciseId: string, defaultReps = 0) => {
     setLogInputs((prev) => ({
       ...prev,
       [exerciseId]: {
-        setsDone: prev[exerciseId]?.setsDone ?? 0,
-        repsPerSet: prev[exerciseId]?.repsPerSet ?? "",
-        weight: prev[exerciseId]?.weight ?? 0,
+        sets: [...(prev[exerciseId]?.sets ?? []), { reps: defaultReps, weight: 0 }],
         notes: prev[exerciseId]?.notes ?? "",
-        [field]: field === "setsDone" || field === "weight" ? Number(value) : value,
       },
     }));
+  };
+
+  const updateSetField = (exerciseId: string, index: number, field: keyof LogSet, value: string) => {
+    setLogInputs((prev) => {
+      const cur = prev[exerciseId] ?? { sets: [], notes: "" };
+      const sets = cur.sets.slice();
+      const parsed = field === "reps" || field === "weight" ? Number(value) : (value as any);
+      sets[index] = { ...sets[index], [field]: Number.isNaN(parsed) ? 0 : parsed };
+      return { ...prev, [exerciseId]: { ...cur, sets } };
+    });
+  };
+
+  const removeSet = (exerciseId: string, index: number) => {
+    setLogInputs((prev) => {
+      const cur = prev[exerciseId] ?? { sets: [], notes: "" };
+      const sets = cur.sets.slice();
+      sets.splice(index, 1);
+      return { ...prev, [exerciseId]: { ...cur, sets } };
+    });
+  };
+
+  const updateNotes = (exerciseId: string, value: string) => {
+    setLogInputs((prev) => ({ ...prev, [exerciseId]: { sets: prev[exerciseId]?.sets ?? [], notes: value } }));
   };
 
   if (!selectedPlan) {
@@ -62,53 +88,72 @@ const SessionLogger = ({ selectedPlan, sessionEntries, onSaveLog }: SessionLogge
                   <div className="text-sm text-slate-400">Target: {exercise.targetSets} x {exercise.targetReps}</div>
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                <div>
-                  <label className="text-slate-400">Sets done</label>
-                  <input
-                    type="number"
-                    min={0}
-                    className="mt-1 block w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    value={log.setsDone}
-                    onChange={(e) => updateLogInput(exercise.id, "setsDone", e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-400">Reps per set</label>
-                  <input
-                    className="mt-1 block w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="e.g. 10,10,8"
-                    value={log.repsPerSet}
-                    onChange={(e) => updateLogInput(exercise.id, "repsPerSet", e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-400">Weight (kg)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    className="mt-1 block w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    value={log.weight}
-                    onChange={(e) => updateLogInput(exercise.id, "weight", e.target.value)}
-                  />
-                </div>
                 <div>
                   <label className="text-slate-400">Notes</label>
                   <input
                     className="mt-1 block w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     value={log.notes}
-                    onChange={(e) => updateLogInput(exercise.id, "notes", e.target.value)}
+                    onChange={(e) => updateNotes(exercise.id, e.target.value)}
                   />
                 </div>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-slate-400">Sets: {log.sets.length}</div>
+                  <button
+                    className="inline-flex items-center justify-center rounded-md px-2 py-1 text-sm font-medium bg-slate-800 hover:bg-slate-700"
+                    onClick={() => addSet(exercise.id, exercise.targetReps)}
+                  >
+                    + Add set
+                  </button>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  {log.sets.map((s, idx) => (
+                    <div key={idx} className="grid grid-cols-4 gap-2 items-end">
+                      <div className="flex flex-col items-center">
+                        <label className="text-slate-400">#</label>
+                        <div className="mt-1 text-sm text-slate-200">{idx + 1}</div>
+                      </div>
+                      <div>
+                        <label className="text-slate-400">Reps</label>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          style={{ WebkitAppearance: 'none', MozAppearance: 'textfield', appearance: 'textfield' }}
+                          className="mt-1 block w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          value={s.reps}
+                          onChange={(e) => updateSetField(exercise.id, idx, "reps", e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-slate-400">Weight (kg)</label>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          style={{ WebkitAppearance: 'none', MozAppearance: 'textfield', appearance: 'textfield' }}
+                          className="mt-1 block w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          value={s.weight}
+                          onChange={(e) => updateSetField(exercise.id, idx, "weight", e.target.value)}
+                        />
+                      </div>
+                      <div className="flex items-center">
+                        <button
+                          className="ml-2 inline-flex items-center justify-center rounded-md p-2 text-sm font-medium bg-red-600 hover:bg-red-700"
+                          onClick={() => removeSet(exercise.id, idx)}
+                          aria-label={`Remove set ${idx + 1}`}
+                        >
+                          <Trash2 className="w-4 h-4 text-slate-100" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
               </div>
-              <div className="flex justify-end">
-                <button
-                  className="inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium bg-emerald-500 hover:bg-emerald-600"
-                  onClick={() => onSaveLog(exercise, log)}
-                >
-                  Save log
-                </button>
-              </div>
+
+              {/* removed Save log button per request */}
             </div>
           );
         })}

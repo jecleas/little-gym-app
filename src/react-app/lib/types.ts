@@ -31,3 +31,4 @@ export type SessionEntry = {
 };
 
 export type Role = "trainer" | "client";
+

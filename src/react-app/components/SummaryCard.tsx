@@ -1,4 +1,4 @@
-import { SessionEntry, WorkoutPlan } from "../types";
+import { SessionEntry, WorkoutPlan } from "../lib/types";
 
 const SummaryCard = ({ plan, entries, date }: { plan?: WorkoutPlan; entries: SessionEntry[]; date: string }) => {
   return (

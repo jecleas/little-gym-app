@@ -13,9 +13,12 @@
 		"publish": true
 	},
 	"dependencies": {
-		"hono": "4.8.2",
+		"@tailwindcss/vite": "^4.1.17",
+		"hono": "^4.10.6",
+		"lucide-react": "^0.554.0",
 		"react": "19.0.0",
-		"react-dom": "19.0.0"
+		"react-dom": "19.0.0",
+		"tailwindcss": "^4.1.17"
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "1.7.5",
