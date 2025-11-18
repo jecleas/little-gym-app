@@ -1,13 +1,11 @@
 import { useState } from "react";
-import { Role, WorkoutPlan } from "../lib/types";
+import { WorkoutPlan } from "../lib/types";
 import { exerciseTemplates } from "../lib/data";
 import AddExerciseCard from "./AddExerciseCard";
 
 type PlanSelectorCardProps = {
   plans: WorkoutPlan[];
   selectedPlanId: string;
-  selectedPlan?: WorkoutPlan;
-  role: Role;
   onSelectPlan: (planId: string) => void;
   onUpdateExerciseInPlan: (planId: string, exerciseId: string, updates: { name: string; targetSets: number; targetReps: number }) => void;
   onDeleteExerciseFromPlan: (planId: string, exerciseId: string) => void;
@@ -17,8 +15,6 @@ type PlanSelectorCardProps = {
 const PlanSelectorCard = ({
   plans,
   selectedPlanId,
-  selectedPlan,
-  role,
   onSelectPlan,
   onUpdateExerciseInPlan,
   onDeleteExerciseFromPlan,

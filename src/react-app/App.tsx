@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import AddExerciseCard from "./components/AddExerciseCard";
-import PlanFormCard from "./components/PlanFormCard";
 import PlanSelectorCard from "./components/PlanSelectorCard";
 import RoleToggle from "./components/RoleToggle";
 import SessionLogger, { LogInputState } from "./components/SessionLogger";
 import SummaryCard from "./components/SummaryCard";
 import Timer from "./components/Timer";
-import { initialPlans, exerciseTemplates, today, uid } from "./lib/data";
+import { initialPlans, today, uid } from "./lib/data";
 import { Exercise, Role, SessionEntry, WorkoutPlan } from "./lib/types";
 
 const App = () => {
@@ -47,21 +45,6 @@ const App = () => {
 
   const selectedPlan = plans.find((plan) => plan.id === selectedPlanId);
 
-  const handleCreatePlan = (name: string, description?: string) => {
-    const newPlan: WorkoutPlan = {
-      id: uid(),
-      name,
-      description,
-      exercises: [],
-    };
-    setPlans((prev) => {
-      const updated = [...prev, newPlan];
-      savePlans(updated);
-      return updated;
-    });
-    setSelectedPlanId(newPlan.id);
-  };
-
   // Plan-scoped handlers used by PlanSelectorCard modal
   const handleAddExerciseToPlan = (planId: string, exercise: { name: string; targetSets: number; targetReps: number; templateId?: string }) => {
     setPlans((prev) => {
@@ -90,48 +73,6 @@ const App = () => {
   const handleDeleteExerciseFromPlan = (planId: string, exerciseId: string) => {
     setPlans((prev) => {
       const updated = prev.map((plan) => (plan.id === planId ? { ...plan, exercises: plan.exercises.filter((ex) => ex.id !== exerciseId) } : plan));
-      savePlans(updated);
-      return updated;
-    });
-  };
-
-  const handleAddExercise = (exercise: { name: string; targetSets: number; targetReps: number; templateId?: string }) => {
-    if (!selectedPlan) return;
-    const newExercise: Exercise = {
-      id: uid(),
-      name: exercise.name,
-      templateId: exercise.templateId,
-      targetSets: exercise.targetSets,
-      targetReps: exercise.targetReps,
-    };
-    setPlans((prev) => {
-      const updated = prev.map((plan) => (plan.id === selectedPlan.id ? { ...plan, exercises: [...plan.exercises, newExercise] } : plan));
-      savePlans(updated);
-      return updated;
-    });
-  };
-
-  const handleUpdateExercise = (exerciseId: string, updates: { name: string; targetSets: number; targetReps: number }) => {
-    setPlans((prev) => {
-      const updated = prev.map((plan) =>
-        plan.id === selectedPlanId
-          ? {
-              ...plan,
-              exercises: plan.exercises.map((ex) =>
-                ex.id === exerciseId ? { ...ex, name: updates.name, targetSets: updates.targetSets, targetReps: updates.targetReps } : ex,
-              ),
-            }
-          : plan,
-      );
-      savePlans(updated);
-      return updated;
-    });
-  };
-
-  const handleDeleteExercise = (exerciseId: string) => {
-    if (!selectedPlan || role !== "trainer") return;
-    setPlans((prev) => {
-      const updated = prev.map((plan) => (plan.id === selectedPlan.id ? { ...plan, exercises: plan.exercises.filter((ex) => ex.id !== exerciseId) } : plan));
       savePlans(updated);
       return updated;
     });

@@ -11,24 +11,17 @@ export type LogInputState = {
 type SessionLoggerProps = {
   selectedPlan?: WorkoutPlan;
   sessionEntries: SessionEntry[];
-  onSaveLog: (exercise: Exercise, log: LogInputState) => void;
 };
 
 const defaultLogState: LogInputState = { sets: [], notes: "" };
 
-const SessionLogger = ({ selectedPlan, sessionEntries, onSaveLog }: SessionLoggerProps) => {
+const SessionLogger = ({ selectedPlan, sessionEntries }: SessionLoggerProps) => {
   const [logInputs, setLogInputs] = useState<Record<string, LogInputState>>({});
 
   const todayEntries = useMemo(
     () => sessionEntries.filter((entry) => entry.planId === selectedPlan?.id),
     [sessionEntries, selectedPlan?.id],
   );
-
-  const ensureLog = (exerciseId: string, template?: { reps?: number }) =>
-    setLogInputs((prev) => ({
-      ...prev,
-      [exerciseId]: prev[exerciseId] ?? { sets: template?.reps ? [{ reps: template.reps, weight: 0 }] : [], notes: "" },
-    }));
 
   const addSet = (exerciseId: string, defaultReps = 0) => {
     setLogInputs((prev) => ({
