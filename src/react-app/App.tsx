@@ -150,8 +150,6 @@ const App = () => {
               <PlanSelectorCard
                 plans={plans}
                 selectedPlanId={selectedPlanId}
-                selectedPlan={selectedPlan}
-                role={role}
                 onSelectPlan={setSelectedPlanId}
                 onUpdateExerciseInPlan={handleUpdateExerciseInPlan}
                 onDeleteExerciseFromPlan={handleDeleteExerciseFromPlan}
