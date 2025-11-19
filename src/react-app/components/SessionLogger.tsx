@@ -24,20 +24,14 @@ const SessionLogger = ({ selectedPlan, sessionEntries, onSaveLog }: SessionLogge
     [sessionEntries, selectedPlan?.id],
   );
 
-  const ensureLog = (exerciseId: string, template?: { reps?: number }) =>
-    setLogInputs((prev) => ({
-      ...prev,
-      [exerciseId]: prev[exerciseId] ?? { sets: template?.reps ? [{ reps: template.reps, weight: 0 }] : [], notes: "" },
-    }));
-
-  const addSet = (exerciseId: string, defaultReps = 0) => {
-    setLogInputs((prev) => ({
-      ...prev,
-      [exerciseId]: {
-        sets: [...(prev[exerciseId]?.sets ?? []), { reps: defaultReps, weight: 0 }],
-        notes: prev[exerciseId]?.notes ?? "",
-      },
-    }));
+  const addSet = (exercise: Exercise, defaultReps = 0) => {
+    setLogInputs((prev) => {
+      const cur = prev[exercise.id] ?? { sets: [], notes: "" };
+      const sets = [...cur.sets, { reps: defaultReps, weight: 0 }];
+      const newLog = { ...cur, sets };
+      onSaveLog(exercise, newLog);
+      return { ...prev, [exercise.id]: newLog };
+    });
   };
 
   const updateSetField = (exerciseId: string, index: number, field: keyof LogSet, value: string) => {
@@ -46,7 +40,10 @@ const SessionLogger = ({ selectedPlan, sessionEntries, onSaveLog }: SessionLogge
       const sets = cur.sets.slice();
       const parsed = field === "reps" || field === "weight" ? Number(value) : (value as any);
       sets[index] = { ...sets[index], [field]: Number.isNaN(parsed) ? 0 : parsed };
-      return { ...prev, [exerciseId]: { ...cur, sets } };
+      const newLog = { ...cur, sets };
+      const exercise = selectedPlan?.exercises.find((e) => e.id === exerciseId);
+      if (exercise) onSaveLog(exercise, newLog);
+      return { ...prev, [exerciseId]: newLog };
     });
   };
 
@@ -55,12 +52,21 @@ const SessionLogger = ({ selectedPlan, sessionEntries, onSaveLog }: SessionLogge
       const cur = prev[exerciseId] ?? { sets: [], notes: "" };
       const sets = cur.sets.slice();
       sets.splice(index, 1);
-      return { ...prev, [exerciseId]: { ...cur, sets } };
+      const newLog = { ...cur, sets };
+      const exercise = selectedPlan?.exercises.find((e) => e.id === exerciseId);
+      if (exercise) onSaveLog(exercise, newLog);
+      return { ...prev, [exerciseId]: newLog };
     });
   };
 
   const updateNotes = (exerciseId: string, value: string) => {
-    setLogInputs((prev) => ({ ...prev, [exerciseId]: { sets: prev[exerciseId]?.sets ?? [], notes: value } }));
+    setLogInputs((prev) => {
+      const cur = prev[exerciseId] ?? { sets: [], notes: "" };
+      const newLog = { ...cur, notes: value };
+      const exercise = selectedPlan?.exercises.find((e) => e.id === exerciseId);
+      if (exercise) onSaveLog(exercise, newLog);
+      return { ...prev, [exerciseId]: newLog };
+    });
   };
 
   if (!selectedPlan) {
@@ -101,7 +107,7 @@ const SessionLogger = ({ selectedPlan, sessionEntries, onSaveLog }: SessionLogge
                   <div className="text-sm text-slate-400">Sets: {log.sets.length}</div>
                   <button
                     className="inline-flex items-center justify-center rounded-md px-2 py-1 text-sm font-medium bg-slate-800 hover:bg-slate-700"
-                    onClick={() => addSet(exercise.id, exercise.targetReps)}
+                    onClick={() => addSet(exercise, exercise.targetReps)}
                   >
                     + Add set
                   </button>
@@ -144,7 +150,7 @@ const SessionLogger = ({ selectedPlan, sessionEntries, onSaveLog }: SessionLogge
                           onClick={() => removeSet(exercise.id, idx)}
                           aria-label={`Remove set ${idx + 1}`}
                         >
-                          <Trash2 className="w-4 h-4 text-slate-100" />
+                           <Trash2 className="w-4 h-4 text-slate-100" />
                         </button>
                       </div>
                     </div>
