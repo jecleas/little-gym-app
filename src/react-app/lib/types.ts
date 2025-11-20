@@ -2,6 +2,7 @@ export type ExerciseTemplate = {
   id: string;
   name: string;
   muscleGroup?: string;
+  description?: string; // longer textual description / cues
 };
 
 export type Exercise = {
@@ -26,9 +27,8 @@ export type SessionEntry = {
   exerciseId: string;
   setsDone: number;
   repsPerSet: number[];
-  weight: number;
+  weightsPerSet: number[];
   notes?: string;
 };
 
 export type Role = "trainer" | "client";
-

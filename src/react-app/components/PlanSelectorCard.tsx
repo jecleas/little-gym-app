@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { WorkoutPlan } from "../lib/types";
 import { exerciseTemplates } from "../lib/data";
+import { Info, Pencil } from "lucide-react";
 import AddExerciseCard from "./AddExerciseCard";
 
 type PlanSelectorCardProps = {
@@ -10,6 +11,8 @@ type PlanSelectorCardProps = {
   onUpdateExerciseInPlan: (planId: string, exerciseId: string, updates: { name: string; targetSets: number; targetReps: number }) => void;
   onDeleteExerciseFromPlan: (planId: string, exerciseId: string) => void;
   onAddExerciseToPlan: (planId: string, exercise: { name: string; targetSets: number; targetReps: number; templateId?: string }) => void;
+  onStartRoutine?: (planId: string) => void;
+  disableSelection?: boolean; // when true, prevent switching plans
 };
 
 const PlanSelectorCard = ({
@@ -19,12 +22,18 @@ const PlanSelectorCard = ({
   onUpdateExerciseInPlan,
   onDeleteExerciseFromPlan,
   onAddExerciseToPlan,
+  onStartRoutine,
+  disableSelection,
 }: PlanSelectorCardProps) => {
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [editingExerciseId, setEditingExerciseId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editSets, setEditSets] = useState(3);
-  const [editReps, setEditReps] = useState(8);
+  const [editReps, setEditReps] = useState(10);
+  // collapsed state for the My Workouts section
+  const [collapsed, setCollapsed] = useState(false);
+  // info modal state for plan descriptions
+  const [infoPlan, setInfoPlan] = useState<{ title: string; description: string } | null>(null);
 
   const openEditor = (planId: string) => setEditingPlanId(planId);
   const closeEditor = () => {
@@ -49,54 +58,94 @@ const PlanSelectorCard = ({
     setEditingExerciseId(null);
   };
 
+  const openInfoForPlan = (planId: string) => {
+    const plan = plans.find((p) => p.id === planId);
+    if (!plan) return;
+    const title = plan.name;
+    const description = plan.description ?? plan.exercises.map((ex) => `${ex.name} — ${ex.targetSets} x ${ex.targetReps}`).join("\n");
+    setInfoPlan({ title, description });
+  };
+
+  const closeInfo = () => setInfoPlan(null);
+
   return (
     <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 shadow-md flex flex-col gap-3">
-      <h2 className="text-lg font-semibold">Plans</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">My Workouts</h2>
+        <button
+          aria-expanded={!collapsed}
+          onClick={() => setCollapsed((s) => !s)}
+          className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200"
+        >
+          <span className="sr-only">Toggle My Workouts</span>
+          <span className="text-lg">{collapsed ? '▸' : '▾'}</span>
+        </button>
+      </div>
 
-      {/* vertical list of plan cards */}
-      <div className="flex flex-col gap-4">
-        {plans.map((plan) => (
-          <div
-            key={plan.id}
-            onClick={() => onSelectPlan(plan.id)}
-            className={`w-full cursor-pointer rounded-md border ${plan.id === selectedPlanId ? 'border-emerald-500 bg-slate-800' : 'border-slate-700 bg-slate-900'}`}
-          >
-            <div className="p-3 border-b border-slate-800 flex items-start justify-between">
-              <div>
-                <div className="font-medium">{plan.name}</div>
-                {plan.description && <div className="text-sm text-slate-500 mt-1">{plan.description}</div>}
+      {/* vertical list of plan cards (hidden when collapsed) */}
+      {!collapsed && (
+        <div className="flex flex-col gap-4">
+          {plans.map((plan) => (
+            <div
+              key={plan.id}
+              onClick={() => { if (!disableSelection) onSelectPlan(plan.id); }}
+              className={`w-full ${disableSelection ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} rounded-md border ${plan.id === selectedPlanId ? 'border-emerald-500 bg-slate-800' : 'border-slate-700 bg-slate-900'}`}
+            >
+              <div className="p-3 border-b border-slate-800 flex items-start justify-between">
+                <div>
+                  <div className="font-medium">{plan.name}</div>
+                  {plan.description && <div className="text-sm text-slate-500 mt-1">{plan.description}</div>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="text-xs text-slate-400">{plan.exercises.length} exercises</div>
+                  <button
+                    className="p-1 text-slate-400 hover:text-slate-200"
+                    onClick={(e) => { e.stopPropagation(); openInfoForPlan(plan.id); }}
+                    aria-label={`Info for ${plan.name}`}
+                  >
+                    <Info className="w-4 h-4" />
+                  </button>
+                  <button
+                    className="inline-flex items-center justify-center rounded-md px-2 py-1 text-sm font-medium bg-slate-800 hover:bg-slate-700"
+                    onClick={(e) => { e.stopPropagation(); if (!disableSelection) openEditor(plan.id); }}
+                    aria-label={`Edit ${plan.name}`}
+                  >
+                    <Pencil className="w-4 h-4 text-slate-200" />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="text-xs text-slate-400">{plan.exercises.length} exercises</div>
+
+              <div className="p-2 flex flex-col gap-2">
+                {plan.exercises.length > 0 ? (
+                  plan.exercises.map((exercise) => (
+                    <div key={exercise.id} className="flex items-center justify-between rounded-md p-1">
+                      <div>
+                        <div className="font-medium text-sm">{exercise.name}</div>
+                        <div className="text-xs text-slate-400">{exercise.targetSets} x {exercise.targetReps}</div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-sm text-slate-500">No exercises</div>
+                )}
+              </div>
+              {/* Start Routine button full-width */}
+              <div className="p-3 pt-0">
                 <button
-                  className="inline-flex items-center justify-center rounded-md px-2 py-1 text-sm font-medium bg-slate-800 hover:bg-slate-700"
-                  onClick={(e) => { e.stopPropagation(); openEditor(plan.id); }}
+                  className={`w-full inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium bg-emerald-500 hover:bg-emerald-600 ${disableSelection ? 'opacity-50 cursor-not-allowed hover:bg-emerald-500' : ''}`}
+                  disabled={!!disableSelection}
+                  onClick={(e) => { e.stopPropagation(); if (disableSelection) return; if (onStartRoutine) onStartRoutine(plan.id); }}
                 >
-                  Edit
+                  Start Routine
                 </button>
               </div>
             </div>
+          ))}
+        </div>
+      )}
 
-            <div className="p-2 flex flex-col gap-2">
-              {plan.exercises.length > 0 ? (
-                plan.exercises.map((exercise) => (
-                  <div key={exercise.id} className="bg-slate-800 border border-slate-700 rounded-md p-2 flex items-center justify-between">
-                    <div>
-                      <div className="font-medium text-sm">{exercise.name}</div>
-                      <div className="text-xs text-slate-400">{exercise.targetSets} x {exercise.targetReps}</div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-sm text-slate-500">No exercises</div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Editor modal */}
-      {editingPlanId && (
+      {/* Editor modal (hidden when collapsed) */}
+      {!collapsed && editingPlanId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60" onClick={closeEditor} />
           <div className="relative w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-lg p-4 z-10">
@@ -166,7 +215,7 @@ const PlanSelectorCard = ({
                   )}
 
                   <div>
-                    <h4 className="font-semibold">Add exercise</h4>
+                    <h4 className="font-semibold mb-4">Add exercise</h4>
                     <AddExerciseCard
                       templates={exerciseTemplates}
                       onAdd={(ex) => onAddExerciseToPlan(editingPlanId, ex)}
@@ -176,6 +225,22 @@ const PlanSelectorCard = ({
               ) : (
                 <p className="text-sm text-slate-400">Plan not found</p>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Info modal for plan descriptions */}
+      {infoPlan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={closeInfo} />
+          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-lg p-4 z-10">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="font-semibold">{infoPlan.title}</h3>
+                <pre className="whitespace-pre-wrap text-sm text-slate-400 mt-2">{infoPlan.description}</pre>
+              </div>
+              <button className="text-sm text-slate-400" onClick={closeInfo}>Close</button>
             </div>
           </div>
         </div>
