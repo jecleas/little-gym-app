@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
-import { Exercise, SessionEntry, WorkoutPlan } from "../lib/types";
+import { useEffect, useState } from "react";
+import { Exercise, WorkoutPlan } from "../lib/types";
 import { Trash2 } from "lucide-react";
 
-export type LogSet = { reps: number; weight: number };
+export type LogSet = { reps: number | string; weight: number | string };
 export type LogInputState = {
   sets: LogSet[];
   notes: string;
@@ -10,61 +10,92 @@ export type LogInputState = {
 
 type SessionLoggerProps = {
   selectedPlan?: WorkoutPlan;
-  sessionEntries: SessionEntry[];
-  onSaveLog: (exercise: Exercise, log: LogInputState) => void;
+  onFinalizeSession?: (planId: string, logs: Record<string, LogInputState>) => void;
+  onDiscardSession?: (planId: string) => void;
+  draftLogs?: Record<string, LogInputState>; // controlled draft state from App
+  onUpdateDraft?: (exerciseId: string, log: LogInputState) => void; // propagate changes upward
 };
 
 const defaultLogState: LogInputState = { sets: [], notes: "" };
 
-const SessionLogger = ({ selectedPlan, sessionEntries, onSaveLog }: SessionLoggerProps) => {
+const SessionLogger = ({ selectedPlan, onFinalizeSession, onDiscardSession, draftLogs, onUpdateDraft }: SessionLoggerProps) => {
   const [logInputs, setLogInputs] = useState<Record<string, LogInputState>>({});
 
-  const todayEntries = useMemo(
-    () => sessionEntries.filter((entry) => entry.planId === selectedPlan?.id),
-    [sessionEntries, selectedPlan?.id],
-  );
+  // sync incoming draftLogs with internal state whenever plan or draft changes
+  useEffect(() => {
+    if (!selectedPlan) return;
+    const filtered: Record<string, LogInputState> = {};
+    selectedPlan.exercises.forEach(ex => {
+      if (draftLogs && draftLogs[ex.id]) filtered[ex.id] = draftLogs[ex.id];
+    });
+    setLogInputs(filtered);
+  }, [selectedPlan?.id, draftLogs]);
 
-  const addSet = (exercise: Exercise, defaultReps = 0) => {
+  // Handler for finalizing (Save) session
+  const handleFinalize = () => {
+    if (!selectedPlan) return;
+    if (onFinalizeSession) onFinalizeSession(selectedPlan.id, logInputs);
+  };
+
+  const handleDiscard = () => {
+    if (!selectedPlan) return;
+    setLogInputs({});
+    if (onDiscardSession) onDiscardSession(selectedPlan.id);
+  };
+
+  const pushUpdate = (exercise: Exercise, newLog: LogInputState) => {
+    // removed immediate parent session entry save to avoid parent setState during child render
+    if (onUpdateDraft) onUpdateDraft(exercise.id, newLog); // persist draft in App
+  };
+
+  const addSet = (exercise: Exercise) => {
     setLogInputs((prev) => {
       const cur = prev[exercise.id] ?? { sets: [], notes: "" };
-      const sets = [...cur.sets, { reps: defaultReps, weight: 0 }];
+      const sets = [...cur.sets, { reps: "", weight: "" }];
       const newLog = { ...cur, sets };
-      onSaveLog(exercise, newLog);
+      pushUpdate(exercise, newLog);
       return { ...prev, [exercise.id]: newLog };
     });
   };
 
   const updateSetField = (exerciseId: string, index: number, field: keyof LogSet, value: string) => {
+    if (!selectedPlan) return;
     setLogInputs((prev) => {
       const cur = prev[exerciseId] ?? { sets: [], notes: "" };
       const sets = cur.sets.slice();
-      const parsed = field === "reps" || field === "weight" ? Number(value) : (value as any);
-      sets[index] = { ...sets[index], [field]: Number.isNaN(parsed) ? 0 : parsed };
+      if (value === "") {
+        sets[index] = { ...sets[index], [field]: "" } as LogSet;
+      } else {
+        const num = Number(value);
+        sets[index] = { ...sets[index], [field]: Number.isNaN(num) ? 0 : num } as LogSet;
+      }
       const newLog = { ...cur, sets };
-      const exercise = selectedPlan?.exercises.find((e) => e.id === exerciseId);
-      if (exercise) onSaveLog(exercise, newLog);
+      const exercise = selectedPlan.exercises.find(e => e.id === exerciseId);
+      if (exercise) pushUpdate(exercise, newLog);
       return { ...prev, [exerciseId]: newLog };
     });
   };
 
   const removeSet = (exerciseId: string, index: number) => {
+    if (!selectedPlan) return;
     setLogInputs((prev) => {
       const cur = prev[exerciseId] ?? { sets: [], notes: "" };
       const sets = cur.sets.slice();
       sets.splice(index, 1);
       const newLog = { ...cur, sets };
-      const exercise = selectedPlan?.exercises.find((e) => e.id === exerciseId);
-      if (exercise) onSaveLog(exercise, newLog);
+      const exercise = selectedPlan.exercises.find(e => e.id === exerciseId);
+      if (exercise) pushUpdate(exercise, newLog);
       return { ...prev, [exerciseId]: newLog };
     });
   };
 
   const updateNotes = (exerciseId: string, value: string) => {
+    if (!selectedPlan) return;
     setLogInputs((prev) => {
       const cur = prev[exerciseId] ?? { sets: [], notes: "" };
       const newLog = { ...cur, notes: value };
-      const exercise = selectedPlan?.exercises.find((e) => e.id === exerciseId);
-      if (exercise) onSaveLog(exercise, newLog);
+      const exercise = selectedPlan.exercises.find(e => e.id === exerciseId);
+      if (exercise) pushUpdate(exercise, newLog);
       return { ...prev, [exerciseId]: newLog };
     });
   };
@@ -81,7 +112,20 @@ const SessionLogger = ({ selectedPlan, sessionEntries, onSaveLog }: SessionLogge
     <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 shadow-md flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Session Logging</h2>
-        <span className="text-xs text-slate-500">{todayEntries.length} saved today</span>
+        <div className="flex items-center gap-2">
+          <button
+            className="inline-flex items-center justify-center rounded-md px-2 py-1 text-sm font-medium bg-emerald-500 hover:bg-emerald-600"
+            onClick={handleFinalize}
+          >
+            Save
+          </button>
+          <button
+            className="inline-flex items-center justify-center rounded-md px-2 py-1 text-sm font-medium bg-rose-600 hover:bg-rose-700"
+            onClick={handleDiscard}
+          >
+            <Trash2 className="w-4 h-4 text-slate-100" />
+          </button>
+        </div>
       </div>
       <div className="flex flex-col gap-4">
         {selectedPlan.exercises.map((exercise) => {
@@ -94,25 +138,24 @@ const SessionLogger = ({ selectedPlan, sessionEntries, onSaveLog }: SessionLogge
                   <div className="text-sm text-slate-400">Target: {exercise.targetSets} x {exercise.targetReps}</div>
                 </div>
               </div>
-                <div>
-                  <label className="text-slate-400">Notes</label>
-                  <input
-                    className="mt-1 block w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    value={log.notes}
-                    onChange={(e) => updateNotes(exercise.id, e.target.value)}
-                  />
-                </div>
+              <div>
+                <label className="text-slate-400">Notes</label>
+                <input
+                  className="mt-1 block w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  value={log.notes}
+                  onChange={(e) => updateNotes(exercise.id, e.target.value)}
+                />
+              </div>
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-slate-400">Sets: {log.sets.length}</div>
                   <button
                     className="inline-flex items-center justify-center rounded-md px-2 py-1 text-sm font-medium bg-slate-800 hover:bg-slate-700"
-                    onClick={() => addSet(exercise, exercise.targetReps)}
+                    onClick={() => addSet(exercise)}
                   >
                     + Add set
                   </button>
                 </div>
-
                 <div className="flex flex-col gap-2">
                   {log.sets.map((s, idx) => (
                     <div key={idx} className="grid grid-cols-4 gap-2 items-end">
@@ -150,16 +193,13 @@ const SessionLogger = ({ selectedPlan, sessionEntries, onSaveLog }: SessionLogge
                           onClick={() => removeSet(exercise.id, idx)}
                           aria-label={`Remove set ${idx + 1}`}
                         >
-                           <Trash2 className="w-4 h-4 text-slate-100" />
+                          <Trash2 className="w-4 h-4 text-slate-100" />
                         </button>
                       </div>
                     </div>
                   ))}
                 </div>
-
               </div>
-
-              {/* removed Save log button per request */}
             </div>
           );
         })}

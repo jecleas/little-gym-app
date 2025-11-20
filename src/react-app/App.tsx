@@ -1,23 +1,33 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import PlanSelectorCard from "./components/PlanSelectorCard";
-import RoleToggle from "./components/RoleToggle";
 import SessionLogger, { LogInputState } from "./components/SessionLogger";
 import SummaryCard from "./components/SummaryCard";
 import Timer from "./components/Timer";
 import { initialPlans, today, uid } from "./lib/data";
-import { Exercise, Role, SessionEntry, WorkoutPlan } from "./lib/types";
+import { Exercise, SessionEntry, WorkoutPlan } from "./lib/types";
 
 const App = () => {
-  const [role, setRole] = useState<Role>("trainer");
   const [plans, setPlans] = useState<WorkoutPlan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<string>(initialPlans[0]?.id ?? "");
   const [sessionEntries, setSessionEntries] = useState<SessionEntry[]>([]);
-  const [activeTab, setActiveTab] = useState<"plans" | "session" | "summary">("plans");
+  const [activeRoutinePlanId, setActiveRoutinePlanId] = useState<string | null>(null);
+  // draft logs for active routine (exerciseId -> LogInputState) persisted until save/discard
+  const [routineDraft, setRoutineDraft] = useState<Record<string, LogInputState>>({});
+  const [activeTab, setActiveTab] = useState<"workouts" | "session" | "summary">("workouts");
 
   // Persist helper
   const savePlans = (plansToSave: WorkoutPlan[]) => {
     try {
       localStorage.setItem("workout_plans", JSON.stringify(plansToSave));
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  // persist session entries helper
+  const saveSessionEntries = (entries: SessionEntry[]) => {
+    try {
+      localStorage.setItem("session_entries", JSON.stringify(entries));
     } catch (e) {
       // ignore
     }
@@ -43,7 +53,48 @@ const App = () => {
     }
   }, []);
 
+  // load session entries from storage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("session_entries");
+      if (raw) setSessionEntries(JSON.parse(raw));
+    } catch (e) {
+      // ignore
+    }
+  }, []);
+
+  // persist sessionEntries when they change
+  useEffect(() => {
+    saveSessionEntries(sessionEntries);
+  }, [sessionEntries]);
+
+  // restore active routine if present in localStorage and switch to session view
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("active_routine");
+      if (raw) {
+        const obj = JSON.parse(raw);
+        if (obj?.planId) {
+          setSelectedPlanId((prev) => obj.planId || prev);
+          setActiveRoutinePlanId(obj.planId);
+          // hydrate draft sets if any stored
+          try {
+            const draftRaw = localStorage.getItem(`incomplete_session_${obj.planId}`);
+            if (draftRaw) {
+              setRoutineDraft(JSON.parse(draftRaw));
+            }
+          } catch {}
+          setActiveTab("session");
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [plans]);
+
   const selectedPlan = plans.find((plan) => plan.id === selectedPlanId);
+  // plan being actively logged (locked for the routine) separate from UI selection
+  const routinePlan = activeRoutinePlanId ? plans.find(p => p.id === activeRoutinePlanId) : undefined;
 
   // Plan-scoped handlers used by PlanSelectorCard modal
   const handleAddExerciseToPlan = (planId: string, exercise: { name: string; targetSets: number; targetReps: number; templateId?: string }) => {
@@ -79,23 +130,26 @@ const App = () => {
   };
 
   const handleSaveLog = (exercise: Exercise, log: LogInputState) => {
-    if (!selectedPlan) return;
+    // use routine plan if an active routine exists; otherwise fall back to currently selected plan
+    const targetPlan = activeRoutinePlanId ? routinePlan : selectedPlan;
+    if (!targetPlan) return;
 
     const repsArray = log.sets.length ? log.sets.map((s) => Number(s.reps) || 0) : [];
+    const weightsArray = log.sets.length ? log.sets.map((s) => Number(s.weight) || 0) : [];
 
     const newEntry: SessionEntry = {
       id: uid(),
-      planId: selectedPlan.id,
+      planId: targetPlan.id,
       exerciseId: exercise.id,
       date: today,
       setsDone: log.sets.length || exercise.targetSets,
       repsPerSet: repsArray.length ? repsArray : Array(exercise.targetSets).fill(exercise.targetReps),
-      weight: log.sets.length ? (log.sets[log.sets.length - 1].weight || 0) : 0,
+      weightsPerSet: weightsArray.length ? weightsArray : Array(exercise.targetSets).fill(0),
       notes: log.notes.trim() || undefined,
     };
 
     setSessionEntries((prev) => {
-      const existingIndex = prev.findIndex((entry) => entry.planId === selectedPlan.id && entry.exerciseId === exercise.id && entry.date === today);
+      const existingIndex = prev.findIndex((entry) => entry.planId === targetPlan.id && entry.exerciseId === exercise.id && entry.date === today);
       if (existingIndex >= 0) {
         const updated = [...prev];
         updated[existingIndex] = { ...newEntry, id: prev[existingIndex].id };
@@ -105,10 +159,65 @@ const App = () => {
     });
   };
 
-  const todaysSummary = useMemo(
-    () => sessionEntries.filter((entry) => entry.planId === selectedPlan?.id && entry.date === today),
-    [sessionEntries, selectedPlan?.id],
-  );
+  // start a routine: save active routine to localStorage and switch to session tab
+  const handleStartRoutine = (planId: string) => {
+    try {
+      localStorage.setItem("active_routine", JSON.stringify({ planId, startedAt: Date.now() }));
+      // load any existing incomplete draft for this plan
+      const draftRaw = localStorage.getItem(`incomplete_session_${planId}`);
+      if (draftRaw) {
+        try { setRoutineDraft(JSON.parse(draftRaw)); } catch { setRoutineDraft({}); }
+      } else {
+        setRoutineDraft({});
+      }
+    } catch (e) {
+      // ignore
+    }
+    setSelectedPlanId(planId);
+    setActiveRoutinePlanId(planId);
+    setActiveTab("session");
+  };
+
+  const handleFinalizeSession = (planId: string, logs: Record<string, any>) => {
+    // logs keyed by exerciseId containing LogInputState
+    const plan = plans.find((p) => p.id === planId);
+    if (!plan) return;
+    // for each exercise with logs, call handleSaveLog to persist an entry
+    plan.exercises.forEach((exercise) => {
+      const log = logs[exercise.id];
+      if (!log) return;
+      // transform log to LogInputState shape expected by handleSaveLog
+      // handleSaveLog will create/update sessionEntries
+      handleSaveLog(exercise, log);
+    });
+    // clear incomplete storage and active routine
+    try { localStorage.removeItem(`incomplete_session_${planId}`); } catch (e) {}
+    try { localStorage.removeItem("active_routine"); } catch (e) {}
+    setActiveRoutinePlanId(null);
+    setRoutineDraft({});
+    setActiveTab("summary");
+  };
+
+  const handleDiscardSession = (planId: string) => {
+    try { localStorage.removeItem(`incomplete_session_${planId}`); } catch (e) {}
+    try { localStorage.removeItem("active_routine"); } catch (e) {}
+    setActiveRoutinePlanId(null);
+    setRoutineDraft({});
+    setActiveTab("workouts");
+  };
+
+  // persist routineDraft while routine active
+  useEffect(() => {
+    if (!activeRoutinePlanId) return;
+    try {
+      localStorage.setItem(`incomplete_session_${activeRoutinePlanId}` , JSON.stringify(routineDraft));
+    } catch (e) {}
+  }, [routineDraft, activeRoutinePlanId]);
+
+  // update routine draft helper passed to SessionLogger
+  const updateRoutineDraft = (exerciseId: string, log: LogInputState) => {
+    setRoutineDraft(prev => ({ ...prev, [exerciseId]: log }));
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex justify-center px-4 py-8">
@@ -117,35 +226,34 @@ const App = () => {
           <div>
             <h1 className="text-2xl font-semibold">Workout Tracker POC</h1>
           </div>
-          <RoleToggle role={role} onChange={setRole} />
         </header>
 
         {/* Top tabs to switch full-screen panels */}
         <div className="flex items-center gap-2">
           <div className="inline-flex rounded-md overflow-hidden border border-slate-800">
             <button
-              className={`px-3 py-1 ${activeTab === 'plans' ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-slate-200'}`}
-              onClick={() => setActiveTab('plans')}
+              className={`px-3 py-1 ${activeTab === 'workouts' ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-slate-200'}`}
+              onClick={() => setActiveTab('workouts')}
             >
-              Plans
+              Workouts
             </button>
             <button
               className={`px-3 py-1 ${activeTab === 'session' ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-slate-200'}`}
               onClick={() => setActiveTab('session')}
             >
-              Session Logging
+              Session
             </button>
             <button
               className={`px-3 py-1 ${activeTab === 'summary' ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-slate-200'}`}
               onClick={() => setActiveTab('summary')}
             >
-              Today's Summary
+              Summary
             </button>
           </div>
         </div>
 
         <div>
-          {activeTab === 'plans' && (
+          {activeTab === 'workouts' && (
             <section className="flex flex-col gap-4">
               <PlanSelectorCard
                 plans={plans}
@@ -154,6 +262,8 @@ const App = () => {
                 onUpdateExerciseInPlan={handleUpdateExerciseInPlan}
                 onDeleteExerciseFromPlan={handleDeleteExerciseFromPlan}
                 onAddExerciseToPlan={handleAddExerciseToPlan}
+                onStartRoutine={handleStartRoutine}
+                disableSelection={!!activeRoutinePlanId}
               />
 
             </section>
@@ -162,14 +272,28 @@ const App = () => {
           {activeTab === 'session' && (
             <section className="flex flex-col gap-4">
                           <Timer />
-              <SessionLogger selectedPlan={selectedPlan} sessionEntries={sessionEntries} onSaveLog={handleSaveLog} />
+              {/* If there's no active routine, show a Begin New Workout button */}
+              { !activeRoutinePlanId ? (
+                <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 shadow-md">
+                  <p className="text-sm text-slate-400 mb-3">No active workout session.</p>
+                  <button className="inline-flex items-center justify-center rounded-md px-3 py-2 bg-emerald-500 hover:bg-emerald-600" onClick={() => setActiveTab('workouts')}>Begin New Workout</button>
+                </div>
+              ) : (
+                <SessionLogger
+                  selectedPlan={routinePlan}
+                  onFinalizeSession={handleFinalizeSession}
+                  onDiscardSession={handleDiscardSession}
+                  draftLogs={routineDraft}
+                  onUpdateDraft={updateRoutineDraft}
+                />
+              )}
 
             </section>
           )}
 
           {activeTab === 'summary' && (
             <section className="flex flex-col gap-4">
-              <SummaryCard plan={selectedPlan} entries={todaysSummary} date={today} />
+              <SummaryCard allEntries={sessionEntries} plans={plans} />
             </section>
           )}
         </div>
