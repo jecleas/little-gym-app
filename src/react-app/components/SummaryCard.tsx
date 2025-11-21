@@ -53,7 +53,7 @@ const SummaryCard = ({ allEntries, plans }: SummaryCardProps) => {
                   <div key={entry.id} className="text-sm">
                     <span className="font-medium">{exerciseName}: </span>
                     <span className="text-slate-400">
-                      {entry.repsPerSet.join(", ")} reps @ {entry.weightsPerSet.length ? entry.weightsPerSet.join(", ") : '-'} kg
+                      {entry.repsPerSet.join(", ")} reps @ {entry.weightsPerSet.join(", ")} kg
                     </span>
                     {entry.notes && <p className="text-xs text-slate-500 pl-2">- {entry.notes}</p>}
                   </div>

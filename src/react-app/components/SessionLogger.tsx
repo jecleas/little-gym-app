@@ -10,6 +10,7 @@ export type LogInputState = {
 
 type SessionLoggerProps = {
   selectedPlan?: WorkoutPlan;
+  onSaveLog?: (exercise: Exercise, log: LogInputState) => void; // live persistence
   onFinalizeSession?: (planId: string, logs: Record<string, LogInputState>) => void;
   onDiscardSession?: (planId: string) => void;
   draftLogs?: Record<string, LogInputState>; // controlled draft state from App
@@ -18,7 +19,7 @@ type SessionLoggerProps = {
 
 const defaultLogState: LogInputState = { sets: [], notes: "" };
 
-const SessionLogger = ({ selectedPlan, onFinalizeSession, onDiscardSession, draftLogs, onUpdateDraft }: SessionLoggerProps) => {
+const SessionLogger = ({ selectedPlan, onSaveLog, onFinalizeSession, onDiscardSession, draftLogs, onUpdateDraft }: SessionLoggerProps) => {
   const [logInputs, setLogInputs] = useState<Record<string, LogInputState>>({});
 
   // sync incoming draftLogs with internal state whenever plan or draft changes
@@ -43,61 +44,56 @@ const SessionLogger = ({ selectedPlan, onFinalizeSession, onDiscardSession, draf
     if (onDiscardSession) onDiscardSession(selectedPlan.id);
   };
 
-  const pushUpdate = (exercise: Exercise, newLog: LogInputState) => {
-    // removed immediate parent session entry save to avoid parent setState during child render
-    if (onUpdateDraft) onUpdateDraft(exercise.id, newLog); // persist draft in App
-  };
-
   const addSet = (exercise: Exercise) => {
-    setLogInputs((prev) => {
-      const cur = prev[exercise.id] ?? { sets: [], notes: "" };
-      const sets = [...cur.sets, { reps: "", weight: "" }];
-      const newLog = { ...cur, sets };
-      pushUpdate(exercise, newLog);
-      return { ...prev, [exercise.id]: newLog };
-    });
+    if (!selectedPlan) return;
+    const cur = logInputs[exercise.id] ?? { sets: [], notes: "" };
+    const newLog = { ...cur, sets: [...cur.sets, { reps: "", weight: "" }] };
+    setLogInputs(prev => ({ ...prev, [exercise.id]: newLog }));
+    if (onUpdateDraft) onUpdateDraft(exercise.id, newLog);
+    if (onSaveLog) onSaveLog(exercise, newLog);
   };
 
   const updateSetField = (exerciseId: string, index: number, field: keyof LogSet, value: string) => {
     if (!selectedPlan) return;
-    setLogInputs((prev) => {
-      const cur = prev[exerciseId] ?? { sets: [], notes: "" };
-      const sets = cur.sets.slice();
-      if (value === "") {
-        sets[index] = { ...sets[index], [field]: "" } as LogSet;
-      } else {
-        const num = Number(value);
-        sets[index] = { ...sets[index], [field]: Number.isNaN(num) ? 0 : num } as LogSet;
-      }
-      const newLog = { ...cur, sets };
-      const exercise = selectedPlan.exercises.find(e => e.id === exerciseId);
-      if (exercise) pushUpdate(exercise, newLog);
-      return { ...prev, [exerciseId]: newLog };
-    });
+    const exercise = selectedPlan.exercises.find(e => e.id === exerciseId);
+    if (!exercise) return;
+    const cur = logInputs[exerciseId] ?? { sets: [], notes: "" };
+    const sets = cur.sets.slice();
+    if (!sets[index]) sets[index] = { reps: "", weight: "" };
+    if (value === "") {
+      (sets[index] as any)[field] = "";
+    } else {
+      const num = Number(value);
+      (sets[index] as any)[field] = Number.isNaN(num) ? 0 : num;
+    }
+    const newLog = { ...cur, sets };
+    setLogInputs(prev => ({ ...prev, [exerciseId]: newLog }));
+    if (onUpdateDraft) onUpdateDraft(exercise.id, newLog);
+    if (onSaveLog) onSaveLog(exercise, newLog);
   };
 
   const removeSet = (exerciseId: string, index: number) => {
     if (!selectedPlan) return;
-    setLogInputs((prev) => {
-      const cur = prev[exerciseId] ?? { sets: [], notes: "" };
-      const sets = cur.sets.slice();
-      sets.splice(index, 1);
-      const newLog = { ...cur, sets };
-      const exercise = selectedPlan.exercises.find(e => e.id === exerciseId);
-      if (exercise) pushUpdate(exercise, newLog);
-      return { ...prev, [exerciseId]: newLog };
-    });
+    const exercise = selectedPlan.exercises.find(e => e.id === exerciseId);
+    if (!exercise) return;
+    const cur = logInputs[exerciseId] ?? { sets: [], notes: "" };
+    const sets = cur.sets.slice();
+    sets.splice(index, 1);
+    const newLog = { ...cur, sets };
+    setLogInputs(prev => ({ ...prev, [exerciseId]: newLog }));
+    if (onUpdateDraft) onUpdateDraft(exercise.id, newLog);
+    if (onSaveLog) onSaveLog(exercise, newLog);
   };
 
   const updateNotes = (exerciseId: string, value: string) => {
     if (!selectedPlan) return;
-    setLogInputs((prev) => {
-      const cur = prev[exerciseId] ?? { sets: [], notes: "" };
-      const newLog = { ...cur, notes: value };
-      const exercise = selectedPlan.exercises.find(e => e.id === exerciseId);
-      if (exercise) pushUpdate(exercise, newLog);
-      return { ...prev, [exerciseId]: newLog };
-    });
+    const exercise = selectedPlan.exercises.find(e => e.id === exerciseId);
+    if (!exercise) return;
+    const cur = logInputs[exerciseId] ?? { sets: [], notes: "" };
+    const newLog = { ...cur, notes: value };
+    setLogInputs(prev => ({ ...prev, [exerciseId]: newLog }));
+    if (onUpdateDraft) onUpdateDraft(exercise.id, newLog);
+    if (onSaveLog) onSaveLog(exercise, newLog);
   };
 
   if (!selectedPlan) {
