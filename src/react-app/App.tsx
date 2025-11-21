@@ -281,6 +281,7 @@ const App = () => {
               ) : (
                 <SessionLogger
                   selectedPlan={routinePlan}
+                  onSaveLog={handleSaveLog}
                   onFinalizeSession={handleFinalizeSession}
                   onDiscardSession={handleDiscardSession}
                   draftLogs={routineDraft}
