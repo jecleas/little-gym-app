@@ -14,6 +14,7 @@ const App = () => {
   // draft logs for active routine (exerciseId -> LogInputState) persisted until save/discard
   const [routineDraft, setRoutineDraft] = useState<Record<string, LogInputState>>({});
   const [activeTab, setActiveTab] = useState<"workouts" | "session" | "summary">("workouts");
+  const [activeRoutineExtraExercises, setActiveRoutineExtraExercises] = useState<Exercise[]>([]);
 
   // Persist helper
   const savePlans = (plansToSave: WorkoutPlan[]) => {
@@ -77,19 +78,18 @@ const App = () => {
         if (obj?.planId) {
           setSelectedPlanId((prev) => obj.planId || prev);
           setActiveRoutinePlanId(obj.planId);
-          // hydrate draft sets if any stored
           try {
             const draftRaw = localStorage.getItem(`incomplete_session_${obj.planId}`);
-            if (draftRaw) {
-              setRoutineDraft(JSON.parse(draftRaw));
-            }
+            if (draftRaw) setRoutineDraft(JSON.parse(draftRaw));
+          } catch {}
+          try {
+            const extrasRaw = localStorage.getItem(`incomplete_session_extra_${obj.planId}`);
+            if (extrasRaw) setActiveRoutineExtraExercises(JSON.parse(extrasRaw));
           } catch {}
           setActiveTab("session");
         }
       }
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) {}
   }, [plans]);
 
   const selectedPlan = plans.find((plan) => plan.id === selectedPlanId);
@@ -141,6 +141,7 @@ const App = () => {
       id: uid(),
       planId: targetPlan.id,
       exerciseId: exercise.id,
+      exerciseName: exercise.name, // store name to support session-only exercises
       date: today,
       setsDone: log.sets.length || exercise.targetSets,
       repsPerSet: repsArray.length ? repsArray : Array(exercise.targetSets).fill(exercise.targetReps),
@@ -163,60 +164,70 @@ const App = () => {
   const handleStartRoutine = (planId: string) => {
     try {
       localStorage.setItem("active_routine", JSON.stringify({ planId, startedAt: Date.now() }));
-      // load any existing incomplete draft for this plan
       const draftRaw = localStorage.getItem(`incomplete_session_${planId}`);
       if (draftRaw) {
         try { setRoutineDraft(JSON.parse(draftRaw)); } catch { setRoutineDraft({}); }
       } else {
         setRoutineDraft({});
       }
-    } catch (e) {
-      // ignore
-    }
+      const extrasRaw = localStorage.getItem(`incomplete_session_extra_${planId}`);
+      if (extrasRaw) {
+        try { setActiveRoutineExtraExercises(JSON.parse(extrasRaw)); } catch { setActiveRoutineExtraExercises([]); }
+      } else {
+        setActiveRoutineExtraExercises([]);
+      }
+    } catch {}
     setSelectedPlanId(planId);
     setActiveRoutinePlanId(planId);
     setActiveTab("session");
   };
 
   const handleFinalizeSession = (planId: string, logs: Record<string, any>) => {
-    // logs keyed by exerciseId containing LogInputState
     const plan = plans.find((p) => p.id === planId);
     if (!plan) return;
-    // for each exercise with logs, call handleSaveLog to persist an entry
-    plan.exercises.forEach((exercise) => {
+    const combinedExercises = [...plan.exercises, ...activeRoutineExtraExercises];
+    combinedExercises.forEach((exercise) => {
       const log = logs[exercise.id];
       if (!log) return;
-      // transform log to LogInputState shape expected by handleSaveLog
-      // handleSaveLog will create/update sessionEntries
       handleSaveLog(exercise, log);
     });
-    // clear incomplete storage and active routine
-    try { localStorage.removeItem(`incomplete_session_${planId}`); } catch (e) {}
-    try { localStorage.removeItem("active_routine"); } catch (e) {}
+    try { localStorage.removeItem(`incomplete_session_${planId}`); } catch {}
+    try { localStorage.removeItem(`incomplete_session_extra_${planId}`); } catch {}
+    try { localStorage.removeItem("active_routine"); } catch {}
     setActiveRoutinePlanId(null);
     setRoutineDraft({});
+    setActiveRoutineExtraExercises([]);
     setActiveTab("summary");
   };
 
   const handleDiscardSession = (planId: string) => {
-    try { localStorage.removeItem(`incomplete_session_${planId}`); } catch (e) {}
-    try { localStorage.removeItem("active_routine"); } catch (e) {}
+    try { localStorage.removeItem(`incomplete_session_${planId}`); } catch {}
+    try { localStorage.removeItem(`incomplete_session_extra_${planId}`); } catch {}
+    try { localStorage.removeItem("active_routine"); } catch {}
     setActiveRoutinePlanId(null);
     setRoutineDraft({});
+    setActiveRoutineExtraExercises([]);
     setActiveTab("workouts");
   };
 
   // persist routineDraft while routine active
   useEffect(() => {
     if (!activeRoutinePlanId) return;
-    try {
-      localStorage.setItem(`incomplete_session_${activeRoutinePlanId}` , JSON.stringify(routineDraft));
-    } catch (e) {}
+    try { localStorage.setItem(`incomplete_session_${activeRoutinePlanId}`, JSON.stringify(routineDraft)); } catch {}
   }, [routineDraft, activeRoutinePlanId]);
+  useEffect(() => {
+    if (!activeRoutinePlanId) return;
+    try { localStorage.setItem(`incomplete_session_extra_${activeRoutinePlanId}`, JSON.stringify(activeRoutineExtraExercises)); } catch {}
+  }, [activeRoutineExtraExercises, activeRoutinePlanId]);
 
   // update routine draft helper passed to SessionLogger
   const updateRoutineDraft = (exerciseId: string, log: LogInputState) => {
     setRoutineDraft(prev => ({ ...prev, [exerciseId]: log }));
+  };
+
+  const addSessionExercise = (ex: { name: string; targetSets: number; targetReps: number; templateId?: string }) => {
+    if (!activeRoutinePlanId) return;
+    setActiveRoutineExtraExercises(prev => [...prev, { id: uid(), name: ex.name, templateId: ex.templateId, targetSets: ex.targetSets, targetReps: ex.targetReps }]);
   };
 
   return (
@@ -281,6 +292,8 @@ const App = () => {
               ) : (
                 <SessionLogger
                   selectedPlan={routinePlan}
+                  extraExercises={activeRoutineExtraExercises}
+                  onAddSessionExercise={addSessionExercise}
                   onSaveLog={handleSaveLog}
                   onFinalizeSession={handleFinalizeSession}
                   onDiscardSession={handleDiscardSession}
