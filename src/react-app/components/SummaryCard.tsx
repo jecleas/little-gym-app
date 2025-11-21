@@ -48,12 +48,12 @@ const SummaryCard = ({ allEntries, plans }: SummaryCardProps) => {
             </div>
             <div className="flex flex-col gap-2">
               {session.entries.map((entry) => {
-                const exerciseName = plan.exercises.find((ex) => ex.id === entry.exerciseId)?.name ?? "Unknown Exercise";
+                const exerciseName = entry.exerciseName || plan.exercises.find((ex) => ex.id === entry.exerciseId)?.name || "Unknown Exercise";
                 return (
                   <div key={entry.id} className="text-sm">
                     <span className="font-medium">{exerciseName}: </span>
                     <span className="text-slate-400">
-                      {entry.repsPerSet.join(", ")} reps @ {entry.weightsPerSet.join(", ")} kg
+                      {entry.repsPerSet.join(", ")} reps @ {entry.weightsPerSet.length ? entry.weightsPerSet.join(", ") : 'n/a'} kg
                     </span>
                     {entry.notes && <p className="text-xs text-slate-500 pl-2">- {entry.notes}</p>}
                   </div>

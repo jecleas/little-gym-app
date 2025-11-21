@@ -25,6 +25,7 @@ export type SessionEntry = {
   planId: string;
   date: string;
   exerciseId: string;
+  exerciseName?: string; // stored to handle session-only (extra) exercises
   setsDone: number;
   repsPerSet: number[];
   weightsPerSet: number[];

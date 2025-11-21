@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Exercise, WorkoutPlan } from "../lib/types";
-import { Trash2 } from "lucide-react";
+import { Save, Trash2 } from "lucide-react";
+import AddExerciseCard from "./AddExerciseCard";
+import { exerciseTemplates } from "../lib/data";
 
 export type LogSet = { reps: number | string; weight: number | string };
 export type LogInputState = {
@@ -10,27 +12,30 @@ export type LogInputState = {
 
 type SessionLoggerProps = {
   selectedPlan?: WorkoutPlan;
-  onSaveLog?: (exercise: Exercise, log: LogInputState) => void; // live persistence
+  onSaveLog?: (exercise: Exercise, log: LogInputState) => void;
   onFinalizeSession?: (planId: string, logs: Record<string, LogInputState>) => void;
   onDiscardSession?: (planId: string) => void;
-  draftLogs?: Record<string, LogInputState>; // controlled draft state from App
-  onUpdateDraft?: (exerciseId: string, log: LogInputState) => void; // propagate changes upward
+  draftLogs?: Record<string, LogInputState>;
+  onUpdateDraft?: (exerciseId: string, log: LogInputState) => void;
+  extraExercises?: Exercise[]; // session-only added exercises
+  onAddSessionExercise?: (ex: { name: string; targetSets: number; targetReps: number; templateId?: string }) => void;
 };
 
 const defaultLogState: LogInputState = { sets: [], notes: "" };
 
-const SessionLogger = ({ selectedPlan, onSaveLog, onFinalizeSession, onDiscardSession, draftLogs, onUpdateDraft }: SessionLoggerProps) => {
+const SessionLogger = ({ selectedPlan, onSaveLog, onFinalizeSession, onDiscardSession, draftLogs, onUpdateDraft, extraExercises, onAddSessionExercise }: SessionLoggerProps) => {
   const [logInputs, setLogInputs] = useState<Record<string, LogInputState>>({});
 
   // sync incoming draftLogs with internal state whenever plan or draft changes
   useEffect(() => {
     if (!selectedPlan) return;
     const filtered: Record<string, LogInputState> = {};
-    selectedPlan.exercises.forEach(ex => {
+    const extras = extraExercises || [];
+    [...selectedPlan.exercises, ...extras].forEach(ex => {
       if (draftLogs && draftLogs[ex.id]) filtered[ex.id] = draftLogs[ex.id];
     });
     setLogInputs(filtered);
-  }, [selectedPlan?.id, draftLogs]);
+  }, [selectedPlan?.id, draftLogs, extraExercises]);
 
   // Handler for finalizing (Save) session
   const handleFinalize = () => {
@@ -55,7 +60,7 @@ const SessionLogger = ({ selectedPlan, onSaveLog, onFinalizeSession, onDiscardSe
 
   const updateSetField = (exerciseId: string, index: number, field: keyof LogSet, value: string) => {
     if (!selectedPlan) return;
-    const exercise = selectedPlan.exercises.find(e => e.id === exerciseId);
+    const exercise = allExercises.find(e => e.id === exerciseId);
     if (!exercise) return;
     const cur = logInputs[exerciseId] ?? { sets: [], notes: "" };
     const sets = cur.sets.slice();
@@ -74,7 +79,7 @@ const SessionLogger = ({ selectedPlan, onSaveLog, onFinalizeSession, onDiscardSe
 
   const removeSet = (exerciseId: string, index: number) => {
     if (!selectedPlan) return;
-    const exercise = selectedPlan.exercises.find(e => e.id === exerciseId);
+    const exercise = allExercises.find(e => e.id === exerciseId);
     if (!exercise) return;
     const cur = logInputs[exerciseId] ?? { sets: [], notes: "" };
     const sets = cur.sets.slice();
@@ -87,7 +92,7 @@ const SessionLogger = ({ selectedPlan, onSaveLog, onFinalizeSession, onDiscardSe
 
   const updateNotes = (exerciseId: string, value: string) => {
     if (!selectedPlan) return;
-    const exercise = selectedPlan.exercises.find(e => e.id === exerciseId);
+    const exercise = allExercises.find(e => e.id === exerciseId);
     if (!exercise) return;
     const cur = logInputs[exerciseId] ?? { sets: [], notes: "" };
     const newLog = { ...cur, notes: value };
@@ -95,6 +100,9 @@ const SessionLogger = ({ selectedPlan, onSaveLog, onFinalizeSession, onDiscardSe
     if (onUpdateDraft) onUpdateDraft(exercise.id, newLog);
     if (onSaveLog) onSaveLog(exercise, newLog);
   };
+
+  const allExercises: Exercise[] = selectedPlan ? [...selectedPlan.exercises, ...(extraExercises || [])] : [];
+  const [showAddExercise, setShowAddExercise] = useState(false);
 
   if (!selectedPlan) {
     return (
@@ -110,10 +118,16 @@ const SessionLogger = ({ selectedPlan, onSaveLog, onFinalizeSession, onDiscardSe
         <h2 className="text-lg font-semibold">Session Logging</h2>
         <div className="flex items-center gap-2">
           <button
+            className="inline-flex items-center justify-center rounded-md px-2 py-1 text-sm font-medium bg-slate-700 hover:bg-slate-600"
+            onClick={() => setShowAddExercise(true)}
+          >
+            Add Exercise
+          </button>
+          <button
             className="inline-flex items-center justify-center rounded-md px-2 py-1 text-sm font-medium bg-emerald-500 hover:bg-emerald-600"
             onClick={handleFinalize}
           >
-            Save
+            <Save className="w-4 h-4 text-slate-100"/>
           </button>
           <button
             className="inline-flex items-center justify-center rounded-md px-2 py-1 text-sm font-medium bg-rose-600 hover:bg-rose-700"
@@ -124,7 +138,7 @@ const SessionLogger = ({ selectedPlan, onSaveLog, onFinalizeSession, onDiscardSe
         </div>
       </div>
       <div className="flex flex-col gap-4">
-        {selectedPlan.exercises.map((exercise) => {
+        {allExercises.map((exercise) => {
           const log = logInputs[exercise.id] ?? defaultLogState;
           return (
             <div key={exercise.id} className="border border-slate-800 rounded-lg p-3 bg-slate-900/50 flex flex-col gap-3">
@@ -201,6 +215,26 @@ const SessionLogger = ({ selectedPlan, onSaveLog, onFinalizeSession, onDiscardSe
         })}
         {selectedPlan.exercises.length === 0 && <p className="text-sm text-slate-500">No exercises in this plan yet.</p>}
       </div>
+      {showAddExercise && selectedPlan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setShowAddExercise(false)} />
+          <div className="relative w-full max-w-xl bg-slate-900 border border-slate-800 rounded-lg p-4 z-10">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-semibold">Add Exercise to Session</h4>
+              <button
+                className="inline-flex items-center justify-center rounded-md px-2 py-1 text-sm font-medium bg-slate-700 hover:bg-slate-600"
+                onClick={() => setShowAddExercise(false)}
+              >
+                Close
+              </button>
+            </div>
+            <AddExerciseCard
+              templates={exerciseTemplates}
+              onAdd={(ex) => { if (onAddSessionExercise) onAddSessionExercise(ex); setShowAddExercise(false); }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

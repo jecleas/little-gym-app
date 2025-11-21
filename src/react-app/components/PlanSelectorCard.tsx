@@ -34,11 +34,14 @@ const PlanSelectorCard = ({
   const [collapsed, setCollapsed] = useState(false);
   // info modal state for plan descriptions
   const [infoPlan, setInfoPlan] = useState<{ title: string; description: string } | null>(null);
+  // control showing the AddExerciseCard inside the editor
+  const [addExercise, setAddExercise] = useState(false);
 
   const openEditor = (planId: string) => setEditingPlanId(planId);
   const closeEditor = () => {
     setEditingPlanId(null);
     setEditingExerciseId(null);
+    setAddExercise(false);
   };
 
   const startEditingExercise = (exerciseId: string, name: string, sets: number, reps: number) => {
@@ -215,17 +218,42 @@ const PlanSelectorCard = ({
                   )}
 
                   <div>
-                    <h4 className="font-semibold mb-4">Add exercise</h4>
-                    <AddExerciseCard
-                      templates={exerciseTemplates}
-                      onAdd={(ex) => onAddExerciseToPlan(editingPlanId, ex)}
-                    />
+                    {!addExercise ? (
+                      <button
+                        className="inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium bg-emerald-500 hover:bg-emerald-600"
+                        onClick={() => setAddExercise(true)}
+                      >
+                        Add Exercise
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               ) : (
                 <p className="text-sm text-slate-400">Plan not found</p>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Exercise popup modal */}
+      {!collapsed && editingPlanId && addExercise && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setAddExercise(false)} />
+          <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-lg p-4 z-10">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-semibold">Add exercise</h4>
+              <button
+                className="inline-flex items-center justify-center rounded-md px-2 py-1 text-sm font-medium bg-slate-700 hover:bg-slate-600"
+                onClick={() => setAddExercise(false)}
+              >
+                Close
+              </button>
+            </div>
+            <AddExerciseCard
+              templates={exerciseTemplates}
+              onAdd={(ex) => { onAddExerciseToPlan(editingPlanId, ex); setAddExercise(false); }}
+            />
           </div>
         </div>
       )}
