@@ -11,12 +11,16 @@
 		"moduleResolution": "bundler",
 		"allowImportingTsExtensions": true,
 		"isolatedModules": true,
-		"moduleDetection": "force",
-		"noEmit": true,
-		"jsx": "react-jsx",
+        "moduleDetection": "force",
+        "noEmit": true,
+        "jsx": "react-jsx",
+        "paths": {
+                "react-router-dom": ["./src/react-app/lib/router"],
+                "qrcode.react": ["./src/react-app/lib/qrcode.react"]
+        },
 
-		/* Linting */
-		"strict": true,
+        /* Linting */
+        "strict": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"noFallthroughCasesInSwitch": true,
